@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-using OCL;
+using OpenCL;
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -18,16 +18,16 @@ namespace VoxelizedRenderer
 	public struct Camera
 	{
 		[FieldOffset(0)]
-		public Float3 Position;
+		public float3 Position;
 
 		[FieldOffset(16)]
-		public Float3 Direction;
+		public float3 Direction;
 
 		[FieldOffset(32)]
-		public Float3 Right;
+		public float3 Right;
 
 		[FieldOffset(48)]
-		public Float3 top;
+		public float3 top;
 
 		[FieldOffset(64)]
 		public float FocalLength;
@@ -37,9 +37,9 @@ namespace VoxelizedRenderer
 
 		public void Update()
 		{
-			this.Right = Float3.Cross(this.Direction, Float3.UnitY);
+			this.Right = float3.Cross(this.Direction, float3.UnitY);
 			this.Right.Normalize();
-			this.top = Float3.Cross(this.Direction, Right);
+			this.top = float3.Cross(this.Direction, Right);
 			this.top.Normalize();
 		}
 	}
@@ -61,7 +61,7 @@ namespace VoxelizedRenderer
 		Memory target;
 		Memory world;
 
-		int[] worldData;
+		byte4[] worldData;
 		int sizeX = 256;
 		int sizeY = 128;
 		int sizeZ = 256;
@@ -73,26 +73,31 @@ namespace VoxelizedRenderer
 			this.DoubleBuffered = true;
 		}
 
-		void setWorld(int x, int y, int z, Byte4 value)
-		{
-			setWorld(x, y, z, BitConverter.ToInt32(value.GetBytes(), 0));
-		}
-
-		void setWorld(int x, int y, int z, int value)
+		void setWorld(int x, int y, int z, byte4 value)
 		{
 			int offset = sizeX * sizeY * z + sizeX * y + x;
 			worldData[offset] = value;
 		}
 
-		Byte4 getWorld(int x, int y, int z)
+		void setWorld(int x, int y, int z, Color value)
 		{
 			int offset = sizeX * sizeY * z + sizeX * y + x;
-			return new Byte4(worldData[offset]);
+			worldData[offset] = new byte4(
+					(byte)value.B, 
+					(byte)value.G, 
+					(byte)value.R, 
+					(byte)value.A); ;
+		}
+
+		byte4 getWorld(int x, int y, int z)
+		{
+			int offset = sizeX * sizeY * z + sizeX * y + x;
+			return worldData[offset];
 		}
 
 		protected override void OnLoad(EventArgs e)
 		{
-			foreach (var platform in OpenCL.GetPlatforms())
+			foreach (var platform in Platform.GetPlatforms())
 			{
 				var devices = platform.GetDevices(DeviceType.GPU);
 				if (devices.Length > 0)
@@ -119,14 +124,14 @@ namespace VoxelizedRenderer
 			kernel = pgm.CreateKernel("render");
 
 			camera = new Camera();
-			camera.Position = new Float3(sizeX / 2, sizeY / 2, sizeZ / 2);
-			camera.Direction = new Float3(1, 0, 0);
+			camera.Position = new float3(sizeX / 2, sizeY / 2, sizeZ / 2);
+			camera.Direction = new float3(1, 0, 0);
 			camera.Direction.Normalize();
 			camera.FocalLength = 300;
 			camera.Aspect = 800.0f / 600.0f;
 			camera.Update();
 
-			worldData = new int[sizeX * sizeY * sizeZ];
+			worldData = new byte4[sizeX * sizeY * sizeZ];
 
 			Random rnd = new Random();
 			Bitmap bmp = (Bitmap)Bitmap.FromFile("heightmap.png");
@@ -138,10 +143,10 @@ namespace VoxelizedRenderer
 					int height = (int)(0.5 * c.R);
 					for (int y = 0; y < height; y++)
 					{
-						setWorld(x, y, z, Color.Gray.ToArgb());
+						setWorld(x, y, z, Color.Gray);
 					}
 					Color gras = Color.FromArgb(0, rnd.Next(120, 137), 0);
-					setWorld(x, height, z, gras.ToArgb());
+					setWorld(x, height, z, gras);
 				}
 			}
 
@@ -162,17 +167,17 @@ namespace VoxelizedRenderer
 
 				for (int y = 1; y < 4 + height; y++)
 				{
-					setWorld(x, sy + y, z, Color.Brown.ToArgb());
+					setWorld(x, sy + y, z, Color.Brown);
 
 					if (y > 3)
 					{
-						setWorld(x - 1, sy + y, z, Color.Lime.ToArgb());
-						setWorld(x, sy + y, z - 1, Color.Lime.ToArgb());
-						setWorld(x + 1, sy + y, z, Color.Lime.ToArgb());
-						setWorld(x, sy + y, z + 1, Color.Lime.ToArgb());
+						setWorld(x - 1, sy + y, z, Color.Lime);
+						setWorld(x, sy + y, z - 1, Color.Lime);
+						setWorld(x + 1, sy + y, z, Color.Lime);
+						setWorld(x, sy + y, z + 1, Color.Lime);
 					}
 				}
-				setWorld(x, sy + height + 4, z, Color.Lime.ToArgb());
+				setWorld(x, sy + height + 4, z, Color.Lime);
 			}
 
 			target = context.CreateBuffer(MemoryFlags.ReadOnly | MemoryFlags.CopyHostPtr, bitmapBuffer);
@@ -230,13 +235,13 @@ namespace VoxelizedRenderer
 				rotation -= 0.1f;
 			if (GetAsyncKeyState(Keys.Right) != 0)
 				rotation += 0.1f;
-			camera.Direction = new Float3(
+			camera.Direction = new float3(
 				(float)(Math.Cos(rotation)),
 				0,
 				(float)(Math.Sin(rotation)));
 			camera.Update();
 
-			Float3 offset = new Float3(0, 0, 0);
+			float3 offset = new float3(0, 0, 0);
 			if (GetAsyncKeyState(Keys.W) != 0)
 				camera.Position += camera.Direction;
 			if (GetAsyncKeyState(Keys.S) != 0)
