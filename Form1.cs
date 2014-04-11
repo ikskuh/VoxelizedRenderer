@@ -61,10 +61,11 @@ namespace VoxelizedRenderer
 		Memory target;
 		Memory world;
 
-		byte4[] worldData;
-		int sizeX = 256;
-		int sizeY = 128;
-		int sizeZ = 256;
+		byte[,,] worldData;
+		int sizeX = 512;
+		int sizeY = 361;
+		int sizeZ = 512;
+		byte threshold = 128;
 
 		public Form1()
 		{
@@ -73,26 +74,13 @@ namespace VoxelizedRenderer
 			this.DoubleBuffered = true;
 		}
 
-		void setWorld(int x, int y, int z, byte4 value)
+		void setWorld(int x, int y, int z, byte value)
 		{
-			int offset = sizeX * sizeY * z + sizeX * y + x;
-			worldData[offset] = value;
+			worldData[x,y,z] = value;
 		}
-
-		void setWorld(int x, int y, int z, Color value)
+		byte getWorld(int x, int y, int z)
 		{
-			int offset = sizeX * sizeY * z + sizeX * y + x;
-			worldData[offset] = new byte4(
-					(byte)value.B, 
-					(byte)value.G, 
-					(byte)value.R, 
-					(byte)value.A); ;
-		}
-
-		byte4 getWorld(int x, int y, int z)
-		{
-			int offset = sizeX * sizeY * z + sizeX * y + x;
-			return worldData[offset];
+			return worldData[x,y,z];
 		}
 
 		protected override void OnLoad(EventArgs e)
@@ -128,57 +116,25 @@ namespace VoxelizedRenderer
 			camera.Direction = new float3(1, 0, 0);
 			camera.Direction.Normalize();
 			camera.FocalLength = 300;
-			camera.Aspect = 800.0f / 600.0f;
+			camera.Aspect = -1.6f * 800.0f / 600.0f;
 			camera.Update();
 
-			worldData = new byte4[sizeX * sizeY * sizeZ];
-
-			Random rnd = new Random();
-			Bitmap bmp = (Bitmap)Bitmap.FromFile("heightmap.png");
-			for (int x = 0; x < sizeX; x++)
+			worldData = new byte[sizeX, sizeY, sizeZ];
+			for (int y = 0; y < sizeY; y++)
 			{
-				for (int z = 0; z < sizeZ; z++)
+				byte[] bits = File.ReadAllBytes(@"C:\Users\Felix\Downloads\bunny-ctscan.tar\bunny\" + (y + 1));
+				for (int x = 0; x < sizeX; x++)
 				{
-					Color c = bmp.GetPixel(x, z);
-					int height = (int)(0.5 * c.R);
-					for (int y = 0; y < height; y++)
+					for (int z = 0; z < sizeZ; z++)
 					{
-						setWorld(x, y, z, Color.Gray);
-					}
-					Color gras = Color.FromArgb(0, rnd.Next(120, 137), 0);
-					setWorld(x, height, z, gras);
-				}
-			}
-
-			int numTrees = rnd.Next(10, 500);
-			for (int i = 0; i < numTrees; i++)
-			{
-				int x = rnd.Next(1, sizeX - 1);
-				int z = rnd.Next(1, sizeZ - 1);
-
-				int sy = 0;
-				for (sy = 0; sy < sizeY - 4; sy++)
-				{
-					if (getWorld(x, sy, z).X == 0)
-						break;
-				}
-
-				int height = rnd.Next(4, 12);
-
-				for (int y = 1; y < 4 + height; y++)
-				{
-					setWorld(x, sy + y, z, Color.Brown);
-
-					if (y > 3)
-					{
-						setWorld(x - 1, sy + y, z, Color.Lime);
-						setWorld(x, sy + y, z - 1, Color.Lime);
-						setWorld(x + 1, sy + y, z, Color.Lime);
-						setWorld(x, sy + y, z + 1, Color.Lime);
+						ushort u = BitConverter.ToUInt16(bits, 2 * (sizeX * z + x));
+						var b = (byte)(u >> 8);
+						setWorld(x,sizeY - y - 1,z, b);
 					}
 				}
-				setWorld(x, sy + height + 4, z, Color.Lime);
+				Console.WriteLine("Loading: {0}%", (int)(100.0f * (float)y / (sizeY)));
 			}
+
 
 			target = context.CreateBuffer(MemoryFlags.ReadOnly | MemoryFlags.CopyHostPtr, bitmapBuffer);
 			cameraBuffer = context.CreateBuffer<Camera>(MemoryFlags.ReadWrite | MemoryFlags.CopyHostPtr, camera);
@@ -201,6 +157,7 @@ namespace VoxelizedRenderer
 			kernel.SetArgument(5, sizeX);
 			kernel.SetArgument(6, sizeY);
 			kernel.SetArgument(7, sizeZ);
+			kernel.SetArgument(8, threshold);
 
 			queue.EnqueueWriteBuffer<Camera>(
 				cameraBuffer,
@@ -224,6 +181,12 @@ namespace VoxelizedRenderer
 			var bmpLock = renderTarget.LockBits(new Rectangle(0, 0, renderTarget.Width, renderTarget.Height), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
 			Marshal.Copy(bitmapBuffer, 0, bmpLock.Scan0, bitmapBuffer.Length);
 			renderTarget.UnlockBits(bmpLock);
+
+			using(var g = Graphics.FromImage(renderTarget))
+			{
+				g.DrawString("Threshold: " + threshold, this.Font, Brushes.DeepPink, 10, 10);
+			}
+
 			this.Invalidate();
 		}
 
@@ -250,6 +213,15 @@ namespace VoxelizedRenderer
 				camera.Position -= camera.Right;
 			if (GetAsyncKeyState(Keys.D) != 0)
 				camera.Position += camera.Right;
+			if (GetAsyncKeyState(Keys.F) != 0)
+				camera.Position += camera.top;
+			if (GetAsyncKeyState(Keys.R) != 0)
+				camera.Position -= camera.top;
+
+			if (GetAsyncKeyState(Keys.Add) != 0)
+				threshold = (byte)Math.Min(255, threshold + 1);
+			if (GetAsyncKeyState(Keys.Subtract) != 0)
+				threshold = (byte)Math.Max(0, threshold - 1);
 
 			this.Render();
 			timerRender.Start();

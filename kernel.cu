@@ -121,10 +121,11 @@ __kernel void render(	global uchar4 *renderTarget,
 						int width, 
 						int height, 
 						global CAMERA *camera,
-						global uchar4 *world,
+						global uchar *world,
 						int sizeX,
 						int sizeY,
-						int sizeZ)
+						int sizeZ,
+						uchar threshold)
 {
 	const int x = get_global_id(0);
 	const int y = get_global_id(1);
@@ -171,14 +172,17 @@ __kernel void render(	global uchar4 *renderTarget,
 	int py = (int)(start.y + 0.5f);
 	int pz = (int)(start.z + 0.5f);
 
-	for(int i = 0; i < 1000; i++)
+	for(int i = 0; i < 750; i++)
 	{
 		if(px >= 0 && py >= 0 && pz >= 0 && px < sizeX && py < sizeY && pz < sizeZ)
 		{
 			int offset = sizeX * sizeY * pz + sizeX * py + px;
-			if(world[offset].w > 127)
+			if(world[offset] >= threshold)
 			{
-				renderTarget[id] = world[offset];
+				renderTarget[id].x = world[offset];
+				renderTarget[id].y =  world[offset];
+				renderTarget[id].z =  world[offset];
+				renderTarget[id].w = 255;
 				return;
 			}
 		}
